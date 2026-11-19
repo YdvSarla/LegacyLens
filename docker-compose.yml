@@ -1,0 +1,139 @@
+name: legacylens
+
+# Topology:
+#   frontend -> backend -> postgres        (private "data" network)
+#   backend  -> sandbox-daemon             (private "sandbox" network, mutual TLS)
+# The sandbox daemon is a nested Docker engine. Tests run inside it, so they never
+# touch the host's Docker socket and cannot reach PostgreSQL over the network.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-legacylens}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-legacylens}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  sandbox-daemon:
+    image: docker:28-dind
+    restart: unless-stopped
+    # Goes into the TLS certificate, which clients verify against this name.
+    hostname: sandbox-daemon
+    # A nested Docker engine needs this. It is why the daemon sits on its own network,
+    # requires client certificates, and is reachable only from the backend.
+    privileged: true
+    environment:
+      DOCKER_TLS_CERTDIR: /certs
+    volumes:
+      - sandbox-certs:/certs
+      - sandbox-data:/var/lib/docker
+    networks: [sandbox]
+    healthcheck:
+      test: ["CMD-SHELL", "docker info >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  sandbox-images:
+    # Builds the test runner images inside the nested engine, then exits.
+    image: docker:28-cli
+    environment:
+      DOCKER_HOST: tcp://sandbox-daemon:2376
+      DOCKER_TLS_VERIFY: "1"
+      DOCKER_CERT_PATH: /certs/client
+    volumes:
+      - sandbox-certs:/certs:ro
+      - ./sandbox:/sandbox:ro
+    working_dir: /sandbox
+    entrypoint: ["sh", "/sandbox/build-images.sh"]
+    networks: [sandbox]
+    depends_on:
+      sandbox-daemon:
+        condition: service_healthy
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-legacylens}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-legacylens}
+      DATA_DIR: /data
+      HF_HOME: /models
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL_DOCKER:-http://ollama:11434}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      DOCKER_HOST: tcp://sandbox-daemon:2376
+      DOCKER_TLS_VERIFY: "1"
+      DOCKER_CERT_PATH: /certs/client
+    volumes:
+      - backend-data:/data
+      - model-cache:/models
+      - sandbox-certs:/certs:ro
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    networks: [data, sandbox, ollama, default]
+    extra_hosts:
+      # Lets the backend reach an Ollama server running on the host machine.
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      sandbox-images:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        BACKEND_URL: http://backend:8000
+    restart: unless-stopped
+    environment:
+      BACKEND_URL: http://backend:8000
+    ports:
+      # Localhost by default. Set FRONTEND_BIND=0.0.0.0 to serve other machines, and use HTTPS.
+      - "${FRONTEND_BIND:-127.0.0.1}:${FRONTEND_PORT:-3000}:3000"
+    networks: [default]
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    profiles: [ollama]
+    volumes:
+      - ollama-models:/root/.ollama
+    networks: [ollama]
+
+networks:
+  default:
+  data:
+    internal: true
+  sandbox:
+  # Not internal, because Ollama has to download models the first time.
+  ollama:
+
+volumes:
+  postgres-data:
+  sandbox-certs:
+  sandbox-data:
+  backend-data:
+  model-cache:
+  ollama-models:

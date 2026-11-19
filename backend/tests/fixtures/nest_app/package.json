@@ -1,0 +1,1 @@
+{ "name": "nest-api", "dependencies": { "@nestjs/core": "^10.0.0", "typeorm": "^0.3.0" } }

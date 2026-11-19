@@ -1,0 +1,4 @@
+# Runtime
+flask==2.3.0
+django>=4.2
+pytest==8.0.0  # for tests

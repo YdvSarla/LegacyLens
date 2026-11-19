@@ -1,0 +1,11 @@
+# Development override: publishes PostgreSQL on localhost so a backend running
+# outside Docker, and the test suite, can reach it. Not for production.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    networks: [data, dev]
+
+networks:
+  dev:

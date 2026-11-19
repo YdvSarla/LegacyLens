@@ -1,0 +1,19 @@
+<?php
+
+/**
+ * Implements hook_menu().
+ */
+function legacy_mod_menu() {
+  $items = array();
+  $items['admin/legacy/list'] = array(
+    'title' => 'Legacy list',
+    'page callback' => 'legacy_mod_list_page',
+    'access arguments' => array('access content'),
+  );
+  return $items;
+}
+
+function legacy_mod_list_page() {
+  module_load_include('inc', 'legacy_mod', 'includes/helper');
+  return legacy_mod_helper_render();
+}

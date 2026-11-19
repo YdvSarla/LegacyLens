@@ -1,0 +1,19 @@
+<?php
+
+/**
+ * Implements hook_help().
+ */
+function acme_reports_help($route_name) {
+  return 'Reports help';
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function acme_reports_form_alter(&$form, $form_state, $form_id) {
+  $form['#title'] = acme_reports_label();
+}
+
+function acme_reports_label() {
+  return 'Label';
+}

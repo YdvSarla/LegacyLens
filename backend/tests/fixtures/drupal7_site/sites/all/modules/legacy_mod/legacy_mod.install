@@ -1,0 +1,15 @@
+<?php
+
+/**
+ * Implements hook_schema().
+ */
+function legacy_mod_schema() {
+  $schema['legacy_items'] = array(
+    'fields' => array(
+      'id' => array('type' => 'serial', 'not null' => TRUE),
+      'title' => array('type' => 'varchar', 'length' => 255),
+    ),
+    'primary key' => array('id'),
+  );
+  return $schema;
+}

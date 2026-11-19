@@ -1,0 +1,3 @@
+services:
+  acme_reports.builder:
+    class: Drupal\acme_reports\Service\ReportBuilder

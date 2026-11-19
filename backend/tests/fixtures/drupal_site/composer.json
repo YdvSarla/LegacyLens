@@ -1,0 +1,1 @@
+{ "name": "acme/site", "require": { "drupal/core-recommended": "^10", "drush/drush": "^12" } }
